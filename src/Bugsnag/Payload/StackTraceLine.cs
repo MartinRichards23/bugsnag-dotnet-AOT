@@ -77,13 +77,46 @@ namespace Bugsnag.Payload
   {
     public static StackTraceLine FromStackFrame(StackFrame stackFrame)
     {
-      var method = stackFrame.GetMethod();
       var file = stackFrame.GetFileName();
       var lineNumber = stackFrame.GetFileLineNumber();
-      var methodName = new Method(method).DisplayName();
-      var inProject = false;
+      string methodName;
 
-      return new StackTraceLine(file, lineNumber, methodName, inProject);
+#if NET9_0_OR_GREATER
+      // If IsDynamicCodeSupported == true, we are not using AOT, so just default to the normal way to get method name
+      if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+        methodName = GetMethodName(stackFrame);
+      else
+        methodName = GetMethodNameAOT(stackFrame);
+#else
+      methodName = GetMethodName(stackFrame);
+#endif
+
+      return new StackTraceLine(file, lineNumber, methodName, false);
+    }
+
+#if NET9_0_OR_GREATER
+    /// <summary>
+    /// Get the method name from the stack frame. This is AOT safe, only available in .NET9 or greater.
+    /// </summary>
+    private static string GetMethodNameAOT(StackFrame stackFrame)
+    {
+      // DiagnosticMethodInfo.Create is AOT safe, but only available int .NET 9+
+      DiagnosticMethodInfo info = DiagnosticMethodInfo.Create(stackFrame);
+
+      if(info == null)
+        return null;
+      else
+        return $"{info.DeclaringTypeName}.{info.Name}";
+    }
+#endif
+
+    /// <summary>
+    /// Get the method name from the stack frame. This is not AOT safe.
+    /// </summary>
+    private static string GetMethodName(StackFrame stackFrame)
+    {
+      var method = stackFrame.GetMethod();
+      return new Method(method).DisplayName();
     }
 
     public StackTraceLine(string file, int lineNumber, string methodName, bool inProject)
